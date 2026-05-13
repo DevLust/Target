@@ -1,7 +1,8 @@
-import { ScrollView, Text, View } from 'react-native'
-import { useLocalSearchParams } from 'expo-router'
+import { Alert, ScrollView, Text, View } from 'react-native'
+import { router, useLocalSearchParams } from 'expo-router'
+import { useSQLiteContext } from 'expo-sqlite'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { TransactionTypes } from '@/utils/TransactionTypes'
 import { TransactionType } from '@/components/TransactionType'
@@ -10,13 +11,47 @@ import { Input } from '@/components/Input'
 import { Button } from '@/components/Button'
 import { colors } from '@/theme/colors'
 import { fontFamily } from '@/theme/fontFamily'
+import { fetchTargetById, insertTransaction } from '@/database/repository'
 
 export default function TransactionScreen() {
   const insets = useSafeAreaInsets()
+  const db = useSQLiteContext()
   const params = useLocalSearchParams<{ id: string }>()
+  const targetId = Number(params.id)
+
   const [type, setType] = useState(TransactionTypes.Input)
   const [value, setValue] = useState<number | null>(50)
   const [reason, setReason] = useState('')
+  const [isProcessing, setIsProcessing] = useState(false)
+
+  const handleSave = useCallback(async () => {
+    if (Number.isNaN(targetId)) {
+      Alert.alert('Erro', 'Meta inválida.')
+      return
+    }
+    const exists = await fetchTargetById(db, targetId)
+    if (!exists) {
+      Alert.alert('Erro', 'Meta não encontrada.')
+      return
+    }
+    if (value == null || value <= 0) {
+      Alert.alert('Atenção', 'Informe um valor maior que zero.')
+      return
+    }
+
+    const signed = type === TransactionTypes.Input ? value : -value
+
+    setIsProcessing(true)
+    try {
+      await insertTransaction(db, targetId, signed, reason || null)
+      Alert.alert('Sucesso', 'Transação registrada.', [{ text: 'OK', onPress: () => router.back() }])
+    } catch (e) {
+      console.error(e)
+      Alert.alert('Erro', 'Não foi possível salvar a transação.')
+    } finally {
+      setIsProcessing(false)
+    }
+  }, [db, reason, targetId, type, value])
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.white }}>
@@ -56,7 +91,7 @@ export default function TransactionScreen() {
           borderTopColor: colors.gray[100],
         }}
       >
-        <Button title="Salvar" onPress={() => {}} />
+        <Button title="Salvar" onPress={handleSave} isLoading={isProcessing} />
       </View>
     </View>
   )

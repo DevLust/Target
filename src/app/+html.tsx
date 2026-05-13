@@ -1,4 +1,3 @@
-// https://docs.expo.dev/router/reference/static-rendering/#root-html
 import { ScrollViewStyleReset } from 'expo-router/html'
 
 export default function Root({ children }: { children: React.ReactNode }) {

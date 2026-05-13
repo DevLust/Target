@@ -1,25 +1,90 @@
 import { Alert, ScrollView, Text, View } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
+import { useSQLiteContext } from 'expo-sqlite'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { Input } from '@/components/Input'
 import { CurrencyInput } from '@/components/CurrencyInput'
 import { Button } from '@/components/Button'
 import { colors } from '@/theme/colors'
 import { fontFamily } from '@/theme/fontFamily'
-import { getGoalDetail } from '@/data/mock'
+import {
+  deleteTarget,
+  fetchTargetById,
+  insertTarget,
+  updateTarget,
+} from '@/database/repository'
 
 export default function TargetScreen() {
   const insets = useSafeAreaInsets()
+  const db = useSQLiteContext()
   const { id } = useLocalSearchParams<{ id?: string }>()
   const isEdit = !!id
-  const detail = id ? getGoalDetail(id) : null
+  const targetId = id ? Number(id) : NaN
 
-  const [name, setName] = useState(detail?.title ?? '')
-  const [targetAmount, setTargetAmount] = useState<number | null>(
-    detail ? detail.targetAmount : null,
-  )
+  const [name, setName] = useState('')
+  const [targetAmount, setTargetAmount] = useState<number | null>(null)
+  const [isProcessing, setIsProcessing] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!isEdit || Number.isNaN(targetId)) {
+      setName('')
+      setTargetAmount(null)
+      return
+    }
+    ;(async () => {
+      const row = await fetchTargetById(db, targetId)
+      if (cancelled || !row) return
+      setName(row.name)
+      setTargetAmount(row.amount)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [db, isEdit, targetId])
+
+  const handleSave = useCallback(async () => {
+    if (!name.trim()) {
+      Alert.alert('Atenção', 'Preencha o nome da meta.')
+      return
+    }
+    if (targetAmount == null || targetAmount <= 0) {
+      Alert.alert('Atenção', 'O valor alvo precisa ser maior que zero.')
+      return
+    }
+
+    setIsProcessing(true)
+    try {
+      if (isEdit && !Number.isNaN(targetId)) {
+        await updateTarget(db, targetId, name, targetAmount)
+        Alert.alert('Sucesso', 'Meta atualizada.', [{ text: 'OK', onPress: () => router.back() }])
+      } else {
+        await insertTarget(db, name, targetAmount)
+        Alert.alert('Sucesso', 'Meta criada.', [{ text: 'OK', onPress: () => router.back() }])
+      }
+    } catch (e) {
+      console.error(e)
+      Alert.alert('Erro', 'Não foi possível salvar. Tente novamente.')
+    } finally {
+      setIsProcessing(false)
+    }
+  }, [db, isEdit, name, targetAmount, targetId])
+
+  const handleDelete = useCallback(async () => {
+    if (Number.isNaN(targetId)) return
+    setIsProcessing(true)
+    try {
+      await deleteTarget(db, targetId)
+      router.back()
+    } catch (e) {
+      console.error(e)
+      Alert.alert('Erro', 'Não foi possível excluir a meta.')
+    } finally {
+      setIsProcessing(false)
+    }
+  }, [db, targetId])
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.white }}>
@@ -38,14 +103,10 @@ export default function TargetScreen() {
           onRightPress={
             isEdit
               ? () =>
-                  Alert.alert(
-                    'Excluir meta',
-                    'Tem certeza que deseja remover esta meta?',
-                    [
-                      { text: 'Cancelar', style: 'cancel' },
-                      { text: 'Excluir', style: 'destructive', onPress: () => router.back() },
-                    ],
-                  )
+                  Alert.alert('Excluir meta', 'Tem certeza que deseja remover esta meta?', [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Excluir', style: 'destructive', onPress: handleDelete },
+                  ])
               : undefined
           }
         />
@@ -77,7 +138,7 @@ export default function TargetScreen() {
           borderTopColor: colors.gray[100],
         }}
       >
-        <Button title="Salvar" onPress={() => router.back()} />
+        <Button title="Salvar" onPress={handleSave} isLoading={isProcessing} />
       </View>
     </View>
   )

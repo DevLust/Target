@@ -1,15 +1,39 @@
 import { Dimensions, FlatList, Platform, Text, View } from 'react-native'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
+import { useSQLiteContext } from 'expo-sqlite'
+import { useCallback, useState } from 'react'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { HomeHeader } from '@/components/HomeHeader'
+import { HomeHeader, type HomeHeaderData } from '@/components/HomeHeader'
 import { Button } from '@/components/Button'
-import { TargetCard } from '@/components/TargetCard'
-import { homeSummary, targets } from '@/data/mock'
+import { TargetCard, type TargetCardData } from '@/components/TargetCard'
 import { colors } from '@/theme/colors'
 import { fontFamily } from '@/theme/fontFamily'
+import { fetchHomeSummary, fetchTargetsForList } from '@/database/repository'
+import { formatBrl } from '@/utils/formatBrl'
+
+const emptySummary: HomeHeaderData = {
+  total: formatBrl(0),
+  input: { label: 'Entradas', value: formatBrl(0) },
+  output: { label: 'Saídas', value: formatBrl(0) },
+}
 
 export default function Index() {
   const insets = useSafeAreaInsets()
+  const db = useSQLiteContext()
+  const [targets, setTargets] = useState<TargetCardData[]>([])
+  const [summary, setSummary] = useState<HomeHeaderData>(emptySummary)
+
+  const load = useCallback(async () => {
+    const [list, home] = await Promise.all([fetchTargetsForList(db), fetchHomeSummary(db)])
+    setTargets(list)
+    setSummary(home)
+  }, [db])
+
+  useFocusEffect(
+    useCallback(() => {
+      void load()
+    }, [load]),
+  )
 
   const rootStyle =
     Platform.OS === 'web'
@@ -28,7 +52,7 @@ export default function Index() {
         keyExtractor={(item) => item.id}
         ListHeaderComponent={
           <View>
-            <HomeHeader data={homeSummary} />
+            <HomeHeader data={summary} />
             <Text
               style={{
                 fontFamily: fontFamily.bold,
